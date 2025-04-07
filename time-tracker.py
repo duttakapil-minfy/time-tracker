@@ -7,6 +7,7 @@ import csv
 import os
 import json
 import calendar
+import shutil
 from collections import defaultdict
 from resource_path import resource_path
 
@@ -21,22 +22,10 @@ class TimeTrackerApp:
         except:
             pass  # Silently fail if icon doesn't exist
         
-        # Load opportunities from Excel file
-        try:
-            excel_file = resource_path("Kapil-Dutta-Open-Deals.xlsx")
-            self.df = pd.read_excel(excel_file)
-            if len(self.df) == 0:
-                messagebox.showerror("Error", f"No data found in {excel_file}")
-                self.root.destroy()
-                return
-        except Exception as e:
-            messagebox.showerror("Error", f"Failed to load data: {str(e)}")
-            self.root.destroy()
-            return
-        
         # Initialize time logs storage
         self.app_data_dir = self.get_app_data_dir()
         self.time_logs_file = os.path.join(self.app_data_dir, "time_logs_data.json")
+        self.crm_data_file = os.path.join(self.app_data_dir, "crm_data.xlsx")
         self.time_logs = self.load_time_logs()
         
         # Define roles and activities
@@ -57,9 +46,24 @@ class TimeTrackerApp:
         self.current_timer = None
         self.start_time = None
         self.running = False
+        self.df = None
         
-        # GUI Setup
-        self.create_widgets()
+        # GUI Setup - Create main window structure first
+        self.setup_main_window()
+        
+        # Load CRM data or prompt user to select a file
+        self.load_crm_data()
+        
+    def setup_main_window(self):
+        """Set up the main window structure"""
+        # Main content frame
+        self.main_frame = tk.Frame(self.root, padx=10, pady=10)
+        self.main_frame.pack(fill="both", expand=True)
+        
+        # Create a placeholder for the main interface
+        # The actual widgets will be created after we have CRM data
+        self.placeholder_frame = tk.Frame(self.main_frame)
+        self.placeholder_frame.pack(fill="both", expand=True)
         
     def get_app_data_dir(self):
         """Get or create application data directory"""
@@ -93,13 +97,117 @@ class TimeTrackerApp:
         except Exception as e:
             messagebox.showwarning("Warning", f"Failed to save time logs: {str(e)}")
 
+    def load_crm_data(self):
+        """Load CRM data from file or prompt user to select a file"""
+        # Check if we have a saved CRM data file
+        if os.path.exists(self.crm_data_file):
+            try:
+                self.df = pd.read_excel(self.crm_data_file)
+                if len(self.df) > 0:
+                    self.create_widgets()
+                    return
+            except Exception as e:
+                # If there's an error, we'll prompt the user for a new file
+                pass
+        
+        # We didn't find a valid saved file, so ask the user to upload one
+        self.prompt_for_crm_file()
+    
+    def prompt_for_crm_file(self):
+        """Show interface for loading a CRM data file"""
+        # Clear placeholder
+        for widget in self.placeholder_frame.winfo_children():
+            widget.destroy()
+        
+        # Create labels and buttons for file selection
+        tk.Label(
+            self.placeholder_frame, 
+            text="Welcome to Time Tracker",
+            font=("Arial", 16)
+        ).pack(pady=20)
+        
+        tk.Label(
+            self.placeholder_frame,
+            text="No CRM data file found. Please select your CRM data Excel file to continue.",
+            wraplength=400
+        ).pack(pady=10)
+        
+        tk.Label(
+            self.placeholder_frame,
+            text="The file should have columns for 'Record Id', 'Deal Name', 'Company Name (Company Name)', and 'Deal Owner'.",
+            wraplength=400,
+            font=("Arial", 9),
+            fg="gray"
+        ).pack(pady=10)
+        
+        # Try to load a default file from the resources if it exists (for first-time use)
+        default_file_btn = tk.Button(
+            self.placeholder_frame,
+            text="Use Sample Data",
+            command=self.use_sample_data
+        )
+        default_file_btn.pack(pady=5)
+        
+        # Or select a custom file
+        select_file_btn = tk.Button(
+            self.placeholder_frame,
+            text="Select CRM Data File",
+            command=self.select_crm_file
+        )
+        select_file_btn.pack(pady=20)
+    
+    def use_sample_data(self):
+        """Use sample data from resources (if available)"""
+        try:
+            sample_file = resource_path("Kapil-Dutta-Open-Deals.xlsx")
+            if os.path.exists(sample_file):
+                # Copy the sample file to the app data directory
+                shutil.copy(sample_file, self.crm_data_file)
+                self.df = pd.read_excel(self.crm_data_file)
+                self.create_widgets()
+            else:
+                messagebox.showerror("Error", "Sample data file not found. Please select your own file.")
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to load sample data: {str(e)}")
+    
+    def select_crm_file(self):
+        """Allow user to select a CRM data file"""
+        file_path = filedialog.askopenfilename(
+            title="Select CRM Data File",
+            filetypes=[("Excel files", "*.xlsx *.xls"), ("All files", "*.*")]
+        )
+        
+        if file_path:
+            try:
+                # Try to load the selected file
+                temp_df = pd.read_excel(file_path)
+                
+                # Validate that it has the required columns
+                required_columns = ['Record Id', 'Deal Name', 'Company Name (Company Name)', 'Deal Owner']
+                missing_columns = [col for col in required_columns if col not in temp_df.columns]
+                
+                if missing_columns:
+                    messagebox.showerror("Invalid File", 
+                                        f"The selected file is missing the following required columns: {', '.join(missing_columns)}\n\n"
+                                        "Please select a file with the correct format.")
+                    return
+                
+                # Copy to app data directory and use it
+                shutil.copy(file_path, self.crm_data_file)
+                self.df = temp_df
+                self.create_widgets()
+                
+            except Exception as e:
+                messagebox.showerror("Error", f"Failed to load the selected file: {str(e)}")
+    
     def create_widgets(self):
-        # Main content frame
-        main_frame = tk.Frame(self.root, padx=10, pady=10)
-        main_frame.pack(fill="both", expand=True)
+        """Create the main application widgets after loading CRM data"""
+        # Clear placeholder frame
+        for widget in self.placeholder_frame.winfo_children():
+            widget.destroy()
         
         # ========== Selection Section ==========
-        selection_frame = tk.LabelFrame(main_frame, text="Project Selection")
+        selection_frame = tk.LabelFrame(self.placeholder_frame, text="Project Selection")
         selection_frame.pack(fill="x", padx=5, pady=5)
         
         # Role Selection
@@ -108,25 +216,33 @@ class TimeTrackerApp:
         self.role_combo.grid(row=0, column=1, padx=5, pady=5, sticky="w")
         self.role_combo.set("Pre-Sales")  # Default role
         
+        # CRM Data File Button - Allow changing the data source
+        change_file_btn = tk.Button(
+            selection_frame, 
+            text="Change CRM Data File", 
+            command=self.select_crm_file
+        )
+        change_file_btn.grid(row=0, column=2, padx=5, pady=5, sticky="e")
+        
         # Activity Selection
         tk.Label(selection_frame, text="Activity:").grid(row=1, column=0, padx=5, pady=5, sticky="w")
         self.activity_combo = ttk.Combobox(selection_frame, values=self.activities, width=40)
-        self.activity_combo.grid(row=1, column=1, padx=5, pady=5, sticky="w")
+        self.activity_combo.grid(row=1, column=1, columnspan=2, padx=5, pady=5, sticky="w")
         
         # Opportunity Selection
         tk.Label(selection_frame, text="Opportunity:").grid(row=2, column=0, padx=5, pady=5, sticky="w")
         self.opportunity_combo = ttk.Combobox(selection_frame, 
                                             values=[f"{row['Deal Name']} ({row['Record Id']})" for _, row in self.df.iterrows()],
                                             width=40)
-        self.opportunity_combo.grid(row=2, column=1, padx=5, pady=5, sticky="w")
+        self.opportunity_combo.grid(row=2, column=1, columnspan=2, padx=5, pady=5, sticky="w")
         
         # Optional Comment Field
         tk.Label(selection_frame, text="Comments:").grid(row=3, column=0, padx=5, pady=5, sticky="w")
         self.comment_entry = tk.Entry(selection_frame, width=40)
-        self.comment_entry.grid(row=3, column=1, padx=5, pady=5, sticky="w")
+        self.comment_entry.grid(row=3, column=1, columnspan=2, padx=5, pady=5, sticky="w")
         
         # ========== Timer Section ==========
-        timer_frame = tk.LabelFrame(main_frame, text="Time Tracking")
+        timer_frame = tk.LabelFrame(self.placeholder_frame, text="Time Tracking")
         timer_frame.pack(fill="x", padx=5, pady=10)
         
         # Timer Display
@@ -147,7 +263,7 @@ class TimeTrackerApp:
         self.stop_btn.pack(side=tk.LEFT, padx=5)
         
         # ========== Export Section ==========
-        export_frame = tk.LabelFrame(main_frame, text="Export Options")
+        export_frame = tk.LabelFrame(self.placeholder_frame, text="Export Options")
         export_frame.pack(fill="x", padx=5, pady=5)
         
         # Daily export options
@@ -177,7 +293,7 @@ class TimeTrackerApp:
         self.export_weekly_excel_btn.pack(side=tk.LEFT, padx=5)
         
         # Show current logs count
-        self.logs_info_label = tk.Label(main_frame, text=f"Saved logs: {len(self.time_logs)}")
+        self.logs_info_label = tk.Label(self.placeholder_frame, text=f"Saved logs: {len(self.time_logs)}")
         self.logs_info_label.pack(pady=5)
 
     def start_timer(self):
@@ -374,9 +490,8 @@ class TimeTrackerApp:
         
         # Create column headers with weekday names and dates
         weekdays = ['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN']
-        date_headers = [f"MAR {d.day}" for d in date_range]  # Using month from the image
-        # In real implementation, you would use:
-        # date_headers = [f"{d.strftime('%b').upper()} {d.day}" for d in date_range]
+        # Get the actual month abbreviation from the date range
+        date_headers = [f"{d.strftime('%b').upper()} {d.day}" for d in date_range]
         
         # Group logs by activity and date
         activity_time = defaultdict(lambda: defaultdict(int))
@@ -437,7 +552,7 @@ class TimeTrackerApp:
             
             data.append(row)
             
-            # Add comment rows (blank in this implementation, could be populated from log comments)
+            # Add comment rows - populate from comments if available
             comment_row = ["COMMENT"] + [""] * 8
             data.append(comment_row)
         

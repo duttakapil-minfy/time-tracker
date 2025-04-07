@@ -1,12 +1,16 @@
 # -*- mode: python ; coding: utf-8 -*-
+import os
 
 block_cipher = None
+
+# Make sure to include the sample CRM data file
+sample_data = [('Kapil-Dutta-Open-Deals.xlsx', '.')]
 
 a = Analysis(
     ['time-tracker.py'],
     pathex=[],
     binaries=[],
-    datas=[('Kapil-Dutta-Open-Deals.xlsx', '.')],
+    datas=sample_data,
     hiddenimports=['pandas', 'openpyxl'],
     hookspath=[],
     hooksconfig={},
