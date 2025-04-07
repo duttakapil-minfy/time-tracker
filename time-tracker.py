@@ -8,15 +8,22 @@ import os
 import json
 import calendar
 from collections import defaultdict
+from resource_path import resource_path
 
 class TimeTrackerApp:
     def __init__(self, root):
         self.root = root
         self.root.title("Opportunity Time Tracker")
         
+        # Set application icon (for Windows executable)
+        try:
+            self.root.iconbitmap(resource_path("icon.ico"))
+        except:
+            pass  # Silently fail if icon doesn't exist
+        
         # Load opportunities from Excel file
         try:
-            excel_file = "Kapil-Dutta-Open-Deals.xlsx"
+            excel_file = resource_path("Kapil-Dutta-Open-Deals.xlsx")
             self.df = pd.read_excel(excel_file)
             if len(self.df) == 0:
                 messagebox.showerror("Error", f"No data found in {excel_file}")
@@ -28,7 +35,8 @@ class TimeTrackerApp:
             return
         
         # Initialize time logs storage
-        self.time_logs_file = "time_logs_data.json"
+        self.app_data_dir = self.get_app_data_dir()
+        self.time_logs_file = os.path.join(self.app_data_dir, "time_logs_data.json")
         self.time_logs = self.load_time_logs()
         
         # Define roles and activities
@@ -52,6 +60,20 @@ class TimeTrackerApp:
         
         # GUI Setup
         self.create_widgets()
+        
+    def get_app_data_dir(self):
+        """Get or create application data directory"""
+        # Create an app-specific data directory in user's home
+        if os.name == 'nt':  # Windows
+            app_data = os.path.join(os.environ['APPDATA'], 'TimeTracker')
+        else:  # macOS and Linux
+            app_data = os.path.join(os.path.expanduser('~'), '.timetracker')
+            
+        # Create directory if it doesn't exist
+        if not os.path.exists(app_data):
+            os.makedirs(app_data)
+            
+        return app_data
         
     def load_time_logs(self):
         """Load existing time logs from JSON file"""
