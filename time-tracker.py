@@ -31,16 +31,19 @@ class TimeTrackerApp:
         # Define roles and activities
         self.roles = ["Pre-Sales"]  # Default role for now, can be expanded later
         
-        # Activity types based on the image
+        # Activity types based on the updated list provided by the user
         self.activities = [
-            "Solution Innovation and Improvement",
-            "Client and Partner Engagement",
-            "Solution Design and Architecture",
-            "Proposal Support",
-            "Solution Documentation",
+            "Pre-sales Proposal Making",
             "Internal Meetings",
-            "Training and Development",
-            "Administrative Tasks"
+            "Client Meetings",
+            "HR Operational Tasks",
+            "Solution Innovation & Improvement",
+            "Team building (Collaboration)",
+            "COE",
+            "Marketing",
+            "Miscellaneous Tasks",
+            "Internal Sync Up",
+            "Internal Projects"
         ]
         
         self.current_timer = None
@@ -187,8 +190,9 @@ class TimeTrackerApp:
                 missing_columns = [col for col in required_columns if col not in temp_df.columns]
                 
                 if missing_columns:
+                    missing_cols_str = ', '.join(missing_columns)
                     messagebox.showerror("Invalid File", 
-                                        f"The selected file is missing the following required columns: {', '.join(missing_columns)}\n\n"
+                                        f"The selected file is missing the following required columns: {missing_cols_str}\n\n"
                                         "Please select a file with the correct format.")
                     return
                 
@@ -199,7 +203,7 @@ class TimeTrackerApp:
                 
             except Exception as e:
                 messagebox.showerror("Error", f"Failed to load the selected file: {str(e)}")
-    
+
     def create_widgets(self):
         """Create the main application widgets after loading CRM data"""
         # Clear placeholder frame
@@ -422,18 +426,47 @@ class TimeTrackerApp:
         # Create a DataFrame from filtered time logs
         logs_df = pd.DataFrame(logs_to_export)
         
-        # Add formatted duration (HH:MM:SS)
-        if 'Duration (seconds)' in logs_df.columns:
-            logs_df['Duration (HH:MM:SS)'] = logs_df['Duration (seconds)'].apply(
-                lambda x: f"{x//3600:02d}:{(x%3600)//60:02d}:{x%60:02d}")
+        # Format the data to match the required column structure
+        formatted_data = []
+        for log in logs_to_export:
+            # Get duration in minutes
+            duration_minutes = log['Duration (seconds)'] // 60
+            
+            # Extract project code from the opportunity/deal name
+            project_code = log['Record Id']
+            
+            # Use company name as client
+            client_code = log['Company Name']
+            
+            # Use activity as task name
+            task_name = log['Activity']
+            
+            # Default billing classification
+            billing_classification = "Billable"  # Default value, can be customized
+            
+            # Format date and times to match required format
+            entry_date = datetime.strptime(log['Date'], '%Y-%m-%d').strftime('%Y-%m-%d')
+            start_time = datetime.strptime(log['Start Time'], '%H:%M:%S').strftime('%H:%M')
+            end_time = datetime.strptime(log['End Time'], '%H:%M:%S').strftime('%H:%M')
+            
+            formatted_data.append({
+                'Project - (Code)': project_code,
+                'Client - (Code)': client_code,
+                'Task Name': task_name,
+                'Billing classification': billing_classification,
+                'Entry Date': entry_date,
+                'Start Time (HH:mm)': start_time,
+                'End Time (HH:mm)': end_time,
+                'Duration (In minutes)': duration_minutes,
+                'Comment': log.get('Comment', '')
+            })
         
-        # For cleaner output, drop timestamp column which is only for internal use
-        if 'Timestamp' in logs_df.columns:
-            logs_df = logs_df.drop(columns=['Timestamp'])
+        # Create a new DataFrame with the formatted data
+        formatted_df = pd.DataFrame(formatted_data)
         
         # Choose file path for export
         if format_type == "csv":
-            default_filename = f"time_logs_{period_str}.csv"
+            default_filename = f"time_entries_{period_str}.csv"
             filetypes = [("CSV files", "*.csv"), ("All files", "*.*")]
             file_path = filedialog.asksaveasfilename(
                 defaultextension=".csv",
@@ -442,18 +475,18 @@ class TimeTrackerApp:
             )
             
             if file_path:
-                # Export detailed logs as CSV
-                logs_df.to_csv(file_path, index=False)
+                # Export detailed logs as CSV in the required format
+                formatted_df.to_csv(file_path, index=False)
                 
                 # Create weekly summary timesheet-like format
                 self.export_weekly_summary(logs_to_export, file_path.replace('.csv', '_weekly_summary.csv'), "csv")
                 
                 messagebox.showinfo("Success", 
-                                   f"Time logs exported to {os.path.basename(file_path)}\n"
+                                   f"Time entries exported to {os.path.basename(file_path)}\n"
                                    f"Weekly summary exported to {os.path.basename(file_path.replace('.csv', '_weekly_summary.csv'))}")
                 
         elif format_type == "excel":
-            default_filename = f"time_logs_{period_str}.xlsx"
+            default_filename = f"time_entries_{period_str}.xlsx"
             filetypes = [("Excel files", "*.xlsx"), ("All files", "*.*")]
             file_path = filedialog.asksaveasfilename(
                 defaultextension=".xlsx",
@@ -464,14 +497,29 @@ class TimeTrackerApp:
             if file_path:
                 # Export as Excel with multiple sheets
                 with pd.ExcelWriter(file_path) as writer:
-                    logs_df.to_excel(writer, sheet_name='Detailed Logs', index=False)
+                    formatted_df.to_excel(writer, sheet_name='Time Entries Import', index=False)
                     
                     # Add weekly timesheet-like format
                     self.export_weekly_summary(logs_to_export, writer, "excel")
+                    
+                    # Apply formatting to the Excel file
+                    if hasattr(writer, 'sheets'):
+                        worksheet = writer.sheets['Time Entries Import']
+                        # Set column widths
+                        for i, col in enumerate(formatted_df.columns):
+                            # Adjust the column width based on content length
+                            max_len = max(
+                                formatted_df[col].astype(str).map(len).max(),
+                                len(col)
+                            ) + 2
+                            # Excel column index starts at 1
+                            # Use a conditional here to avoid attribute errors with different Excel writers
+                            if hasattr(worksheet, 'set_column'):
+                                worksheet.set_column(i, i, max_len)
                 
                 messagebox.showinfo("Success", 
-                                   f"Time logs exported to {os.path.basename(file_path)}\n"
-                                   f"(Includes both detailed logs and weekly summary)")
+                                   f"Time entries exported to {os.path.basename(file_path)}\n"
+                                   f"(Includes both time entries and weekly summary)")
     
     def export_weekly_summary(self, logs, output, format_type):
         """Create a weekly summary similar to the timesheet image"""
@@ -591,4 +639,4 @@ class TimeTrackerApp:
 if __name__ == "__main__":
     root = tk.Tk()
     app = TimeTrackerApp(root)
-    root.mainloop()
+    root.mainloop() 
